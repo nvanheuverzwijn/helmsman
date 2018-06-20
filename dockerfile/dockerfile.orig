@@ -14,7 +14,7 @@ RUN cd helmsman \
     && if [ ${LT_SHA} != ${LC_SHA} ]; then TAG=latest-$(date +"%d%m%y"); fi \
     && CGO_ENABLED=0 GOOS=linux go install -a -ldflags '-X main.version='$TAG' -extldflags "-static"' . 
 
-FROM alpine:3.6 as kubectl
+FROM alpine:3.6 as kube
 ENV KUBE_LATEST_VERSION="v1.10.0"
 
 RUN apk add --update ca-certificates 
@@ -23,23 +23,23 @@ RUN curl -L https://storage.googleapis.com/kubernetes-release/release/${KUBE_LAT
 RUN chmod +x /usr/local/bin/kubectl 
 
 # The image to keep
-FROM fedora:27
+FROM alpine:3.7 
+RUN apk add --update --no-cache ca-certificates git
+
 ARG HELM_VERSION=v2.8.1
 
-RUN yum -y install git ca-certificates curl wget tar gzip make bash which findutils python2 \
-    && curl -# -L http://storage.googleapis.com/kubernetes-helm/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar zxv -C /tmp \
-    && mv /tmp/linux-amd64/helm /bin/helm ; chmod +x /bin/helm \
+RUN apk --no-cache update \
+    && rm -rf /var/cache/apk/* \
+    && apk add --update -t deps curl tar gzip make bash \
+    && curl -L http://storage.googleapis.com/kubernetes-helm/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar zxv -C /tmp \
+    && mv /tmp/linux-amd64/helm /usr/local/bin/helm \
+    && chmod +x /usr/local/bin/helm \
     && mkdir -p ~/.helm/plugins \
     && helm plugin install https://github.com/hypnoglow/helm-s3.git \
     && helm plugin install https://github.com/nouney/helm-gcs \
-    && rm -rf /tmp/linux-amd64 \
-    && curl -# -LO  https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-206.0.0-linux-x86_64.tar.gz \
-    && tar xzf google-cloud-sdk-206.0.0-linux-x86_64.tar.gz && rm google-cloud-sdk-206.0.0-linux-x86_64.tar.gz \
-    && ./google-cloud-sdk/install.sh -q \
-    && echo -e "PATH=$PATH:/google-cloud-sdk/bin \n export PATH" >> /root/.bash_profile 
+    && rm -rf /tmp/linux-amd64
 
-
-COPY --from=kubectl /usr/local/bin/kubectl /bin/kubectl
+COPY --from=kube /usr/local/bin/kubectl /bin/kubectl
 COPY --from=builder /go/bin/helmsman   /bin/helmsman
 
 WORKDIR /tmp
